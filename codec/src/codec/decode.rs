@@ -161,7 +161,7 @@ fn decode_connect_ack_packet(src: &mut Cursor<Bytes>) -> Result<Packet, ParseErr
     let return_code = src.get_u8();
     Ok(Packet::ConnectAck {
         session_present: check_flag!(flags, ConnectAckFlags::SESSION_PRESENT),
-        return_code: ConnectCode::from(return_code),
+        return_code: ConnectAckReasonCode::from(return_code),
     })
 }
 
@@ -176,6 +176,7 @@ fn decode_publish_packet(
     } else {
         Some(read_u16(src)?)
     };
+    let prop_len = decode_variable_length(src)
 
     let len = src.remaining();
     let payload = take(src, len);
@@ -186,6 +187,7 @@ fn decode_publish_packet(
         retain: (header.packet_flags & 0b0001) == 0b0001,
         topic,
         packet_id,
+        
         payload,
     }))
 }
