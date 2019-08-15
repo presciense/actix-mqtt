@@ -48,6 +48,25 @@ impl MqttSink {
         self.sink.send(mqtt::Packet::Publish(publish));
     }
 
+    /// Send subscribe packet
+    pub fn subscribe(
+        &mut self,
+        topic_filters: Vec<(string::String<Bytes>, mqtt::QoS)>
+    ) -> impl Future<Item = mqtt::Packet, Error = ()> {
+        let (tx, rx) = oneshot::channel();
+
+        let inner = self.inner.get_mut();
+        inner.queue.push_back((inner.idx, tx));
+
+        let subscribe = mqtt::Packet::Subscribe {
+            topic_filters,
+            packet_id: inner.idx,
+        };
+        self.sink.send(subscribe);
+        inner.idx += 1;
+        rx.map_err(|_| ())
+    }
+
     /// Send publish packet
     pub fn publish_qos1(
         &mut self,
