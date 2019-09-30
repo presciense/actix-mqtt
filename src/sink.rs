@@ -74,7 +74,8 @@ impl MqttSink {
         topic: ByteString,
         payload: Bytes,
         dup: bool,
-    ) -> impl Future<Output = Result<(), ()>> {
+    ) -> impl Future<Item = (), Error = ()> {
+        log::trace!("Publish (QoS1) to {:?}", topic);
         let (tx, rx) = oneshot::channel();
 
         let inner = self.inner.get_mut();
@@ -91,10 +92,15 @@ impl MqttSink {
             retain: false,
             qos: mqtt::QoS::AtLeastOnce,
             packet_id: Some(inner.idx),
+<<<<<<< variant A
         });
         log::trace!("Publish (QoS1) to {:#?}", publish);
 
         self.sink.send(publish);
+>>>>>>> variant B
+        };
+        self.sink.send(mqtt::Packet::Publish(publish));
+======= end
         rx.map_err(|_| ())
     }
 
