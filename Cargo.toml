@@ -19,12 +19,12 @@ members = [
 
 [dependencies]
 mqtt-codec = "0.2.0"
-actix-codec = "0.1.2"
-actix-service = "0.4.1"
-actix-utils = "0.4.2"
-actix-router = "0.1.5"
-actix-server-config = "0.1.1"
-actix-ioframe = "0.1.0"
+actix-codec = "*"
+actix-service = "*"
+actix-utils = "*"
+actix-router = "*"
+actix-server-config = "*"
+actix-ioframe = "*"
 
 derive_more = "0.15.0"
 bytes = "0.4"
