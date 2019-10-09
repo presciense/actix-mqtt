@@ -52,7 +52,7 @@ impl MqttSink {
     pub fn subscribe(
         &mut self,
         topic_filters: Vec<(string::String<Bytes>, mqtt::QoS)>
-    ) -> impl Future<Item = mqtt::Packet, Error = ()> {
+    ) -> impl Future<Item = (), Error = ()> {
         let (tx, rx) = oneshot::channel();
 
         let inner = self.inner.get_mut();
