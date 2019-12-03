@@ -4,7 +4,7 @@ use std::fmt;
 use actix_ioframe::Sink;
 use actix_utils::oneshot;
 use bytes::Bytes;
-use futures::future::{Future, FutureExt};
+use futures::future::{Future, TryFutureExt};
 use mqtt_codec as mqtt;
 
 use crate::cell::Cell;
@@ -73,7 +73,7 @@ impl MqttSink {
         topic: string::String<Bytes>,
         payload: Bytes,
         dup: bool,
-    ) -> impl Future<Output = ()> {
+    ) -> impl Future<Output = Result<(), ()>> {
         let (tx, rx) = oneshot::channel();
 
         let inner = self.inner.get_mut();
@@ -94,7 +94,7 @@ impl MqttSink {
         log::trace!("Publish (QoS1) to {:#?}", publish);
 
         self.sink.send(publish);
-        rx.map(|_| ())
+        rx.map_err(|_| ())
     }
 
     pub(crate) fn complete_publish_qos1(&mut self, packet_id: u16) {
