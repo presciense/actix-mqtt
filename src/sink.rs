@@ -52,8 +52,8 @@ impl MqttSink {
     /// Send subscribe packet
     pub fn subscribe(
         &mut self,
-        topic_filters: Vec<(string::String<Bytes>, mqtt::QoS)>
-    ) -> impl Future<Item = (), Error = ()> {
+        topic_filters: Vec<(ByteString, mqtt::QoS)>
+    ) -> impl Future<Output=Result<(),()>> {
         let (tx, rx) = oneshot::channel();
 
         let inner = self.inner.get_mut();
@@ -74,8 +74,7 @@ impl MqttSink {
         topic: ByteString,
         payload: Bytes,
         dup: bool,
-    ) -> impl Future<Item = (), Error = ()> {
-        log::trace!("Publish (QoS1) to {:?}", topic);
+    ) -> impl Future<Output=Result<(),()>> {
         let (tx, rx) = oneshot::channel();
 
         let inner = self.inner.get_mut();
@@ -85,22 +84,16 @@ impl MqttSink {
         }
         inner.queue.push_back((inner.idx, tx));
 
-        let publish = mqtt::Packet::Publish(mqtt::Publish {
+        let publish = mqtt::Publish {
             topic,
             payload,
             dup,
             retain: false,
             qos: mqtt::QoS::AtLeastOnce,
             packet_id: Some(inner.idx),
-<<<<<<< variant A
-        });
-        log::trace!("Publish (QoS1) to {:#?}", publish);
-
-        self.sink.send(publish);
->>>>>>> variant B
         };
+
         self.sink.send(mqtt::Packet::Publish(publish));
-======= end
         rx.map_err(|_| ())
     }
 
