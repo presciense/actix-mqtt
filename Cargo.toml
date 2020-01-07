@@ -1,6 +1,6 @@
 [package]
 name = "actix-mqtt"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Nikolay Kim <fafhrd91@gmail.com>"]
 description = "MQTT v3.1.1 Client/Server framework"
 documentation = "https://docs.rs/actix-mqtt"
@@ -19,12 +19,12 @@ members = [
 
 [dependencies]
 mqtt-codec = "0.3.0"
-actix-codec = "0.2.0"
-actix-service = "1.0.0"
-actix-utils = "1.0.1"
-actix-router = "0.2.0"
-actix-ioframe = "0.4.1"
-actix-rt = "1.0.0"
+actix-codec = "*"
+actix-service = "*"
+actix-utils = "*"
+actix-router = "*"
+actix-ioframe = "*"
+actix-rt = "*"
 
 derive_more = "0.99.2"
 bytes = "0.5.2"
@@ -39,6 +39,6 @@ uuid = { version = "0.8", features = ["v4"] }
 
 [dev-dependencies]
 env_logger = "0.6"
-actix-connect = "1.0.0"
+actix-connect = "1.0.1"
 actix-server = "1.0.0"
 actix-testing = "1.0.0"

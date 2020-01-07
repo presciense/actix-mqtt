@@ -74,7 +74,7 @@ impl MqttSink {
         topic: ByteString,
         payload: Bytes,
         dup: bool,
-    ) -> impl Future<Output=Result<(),()>> {
+    ) -> impl Future<Output = Result<(), ()>> {
         let (tx, rx) = oneshot::channel();
 
         let inner = self.inner.get_mut();
