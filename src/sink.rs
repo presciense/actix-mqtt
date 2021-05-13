@@ -5,12 +5,13 @@ use actix_ioframe::Sink;
 use actix_utils::oneshot;
 use bytes::Bytes;
 use bytestring::ByteString;
-use futures::future::{Future, TryFutureExt};
+use futures::future::{Future, TryFutureExt, ok};
 use mqtt_codec as codec;
 
 use crate::cell::Cell;
 use std::num::NonZeroU16;
 use crate::error::SendPacketError;
+use futures::FutureExt;
 
 #[derive(Clone)]
 pub struct MqttSink {
@@ -160,9 +161,8 @@ impl SubscribeBuilder {
         self
     }
 
-    #[allow(clippy::await_holding_refcell_ref)]
     /// Send subscribe packet
-    pub async fn send(mut self) -> Result<(), SendPacketError> {
+    pub fn send(mut self) -> Result<(), SendPacketError> {
         let inner = self.inner.get_mut();
         let filters = self.topic_filters;
 
@@ -190,9 +190,9 @@ impl SubscribeBuilder {
                     topic_filters: filters,
                 }
             );
-            rx.await
-                .map_err(|e| SendPacketError::Disconnected)
-                .map(|_| log::trace!("Subscription of filters acknowledged"))
+            rx.and_then(|r| ok(log::trace!("Subscription acknowledged")));
+
+            Ok(())
         } else {
             Err(SendPacketError::PacketId)
         }
