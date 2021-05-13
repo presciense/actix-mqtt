@@ -12,6 +12,7 @@ mod router;
 mod server;
 mod sink;
 mod subs;
+pub use codec;
 
 pub use self::client::Client;
 pub use self::connect::{Connect, ConnectAck};

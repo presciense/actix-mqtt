@@ -6,7 +6,7 @@ use actix_utils::oneshot;
 use bytes::Bytes;
 use bytestring::ByteString;
 use futures::future::{Future, TryFutureExt};
-use mqtt_codec as mqtt;
+use mqtt_codec as codec;
 
 use crate::cell::Cell;
 use std::num::NonZeroU16;
@@ -14,7 +14,7 @@ use crate::error::SendPacketError;
 
 #[derive(Clone)]
 pub struct MqttSink {
-    sink: Sink<mqtt::Packet>,
+    sink: Sink<codec::Packet>,
     pub(crate) inner: Cell<MqttSinkInner>,
 }
 
@@ -25,7 +25,7 @@ impl fmt::Debug for MqttSink {
 }
 
 impl MqttSink {
-    pub(crate) fn new(sink: Sink<mqtt::Packet>) -> Self {
+    pub(crate) fn new(sink: Sink<codec::Packet>) -> Self {
         MqttSink {
             sink,
             inner: Cell::new(MqttSinkInner::default()),
@@ -41,20 +41,20 @@ impl MqttSink {
     /// Send publish packet with qos set to 0
     pub fn publish_qos0(&self, topic: ByteString, payload: Bytes, dup: bool) {
         log::trace!("Publish (QoS0) to {:?}", topic);
-        let publish = mqtt::Publish {
+        let publish = codec::Publish {
             topic,
             payload,
             dup,
             retain: false,
-            qos: mqtt::QoS::AtMostOnce,
+            qos: codec::QoS::AtMostOnce,
             packet_id: None,
         };
-        self.sink.send(mqtt::Packet::Publish(publish));
+        self.sink.send(codec::Packet::Publish(publish));
     }
 
     pub fn subscribe(
         &mut self,
-        topic_filters: Vec<(ByteString, mqtt::QoS)>,
+        topic_filters: Vec<(ByteString, codec::QoS)>,
     ) -> SubscribeBuilder {
         SubscribeBuilder {
             id: 0,
@@ -80,16 +80,16 @@ impl MqttSink {
         }
         inner.queue.push_back((inner.idx, tx));
 
-        let publish = mqtt::Publish {
+        let publish = codec::Publish {
             topic,
             payload,
             dup,
             retain: false,
-            qos: mqtt::QoS::AtLeastOnce,
+            qos: codec::QoS::AtLeastOnce,
             packet_id: Some(inner.idx),
         };
 
-        self.sink.send(mqtt::Packet::Publish(publish));
+        self.sink.send(codec::Packet::Publish(publish));
         rx.map_err(|_| ())
     }
 
@@ -137,9 +137,9 @@ impl MqttSinkInner {
 pub struct SubscribeBuilder {
     id: u16,
     // shared: Rc<MqttShared>,
-    topic_filters: Vec<(ByteString, mqtt::QoS)>,
+    topic_filters: Vec<(ByteString, codec::QoS)>,
     inner: Cell<MqttSinkInner>,
-    sink: Sink<mqtt::Packet>,
+    sink: Sink<codec::Packet>,
 }
 
 impl SubscribeBuilder {
@@ -155,7 +155,7 @@ impl SubscribeBuilder {
     }
 
     /// Add topic filter
-    pub fn topic_filter(mut self, filter: ByteString, qos: mqtt::QoS) -> Self {
+    pub fn topic_filter(mut self, filter: ByteString, qos: codec::QoS) -> Self {
         self.topic_filters.push((filter, qos));
         self
     }
@@ -185,7 +185,7 @@ impl SubscribeBuilder {
 
         if let Some(id) = NonZeroU16::new(idx) {
             self.sink.send(
-                mqtt::Packet::Subscribe {
+                codec::Packet::Subscribe {
                     packet_id: u16::from(id),
                     topic_filters: filters,
                 }
