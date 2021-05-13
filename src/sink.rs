@@ -9,6 +9,8 @@ use futures::future::{Future, TryFutureExt};
 use mqtt_codec as mqtt;
 
 use crate::cell::Cell;
+use std::num::NonZeroU16;
+use crate::error::SendPacketError;
 
 #[derive(Clone)]
 pub struct MqttSink {
@@ -16,10 +18,10 @@ pub struct MqttSink {
     pub(crate) inner: Cell<MqttSinkInner>,
 }
 
-#[derive(Default)]
-pub(crate) struct MqttSinkInner {
-    pub(crate) idx: u16,
-    pub(crate) queue: VecDeque<(u16, oneshot::Sender<()>)>,
+impl fmt::Debug for MqttSink {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.debug_struct("MqttSink").finish()
+    }
 }
 
 impl MqttSink {
@@ -32,6 +34,7 @@ impl MqttSink {
 
     /// Close mqtt connection
     pub fn close(&self) {
+        //TODO clear queue
         self.sink.close();
     }
 
@@ -49,23 +52,16 @@ impl MqttSink {
         self.sink.send(mqtt::Packet::Publish(publish));
     }
 
-    /// Send subscribe packet
     pub fn subscribe(
         &mut self,
-        topic_filters: Vec<(ByteString, mqtt::QoS)>
-    ) -> impl Future<Output=Result<(),()>> {
-        let (tx, rx) = oneshot::channel();
-
-        let inner = self.inner.get_mut();
-        inner.queue.push_back((inner.idx, tx));
-
-        let subscribe = mqtt::Packet::Subscribe {
+        topic_filters: Vec<(ByteString, mqtt::QoS)>,
+    ) -> SubscribeBuilder {
+        SubscribeBuilder {
+            id: 0,
             topic_filters,
-            packet_id: inner.idx,
-        };
-        self.sink.send(subscribe);
-        inner.idx += 1;
-        rx.map_err(|_| ())
+            inner: self.inner.clone(),
+            sink: self.sink.clone(),
+        }
     }
 
     /// Send publish packet
@@ -74,7 +70,7 @@ impl MqttSink {
         topic: ByteString,
         payload: Bytes,
         dup: bool,
-    ) -> impl Future<Output = Result<(), ()>> {
+    ) -> impl Future<Output=Result<(), ()>> {
         let (tx, rx) = oneshot::channel();
 
         let inner = self.inner.get_mut();
@@ -117,8 +113,90 @@ impl MqttSink {
     }
 }
 
-impl fmt::Debug for MqttSink {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("MqttSink").finish()
+//TODO could make this elsewhere as a shared queue
+#[derive(Default)]
+pub(crate) struct MqttSinkInner {
+    pub(crate) idx: u16,
+    pub(crate) queue: VecDeque<(u16, oneshot::Sender<()>)>, //TODO could be map
+}
+
+impl MqttSinkInner {
+    pub(crate) fn next_id(&mut self) -> u16 {
+        // TODO this is clandestine (multiple threads), refcell?
+        let idx = self.idx + 1;
+        if idx == u16::MAX {
+            self.idx = 0;
+        } else {
+            self.idx = idx;
+        }
+        self.idx
+    }
+}
+
+/// Subscribe packet builder
+pub struct SubscribeBuilder {
+    id: u16,
+    // shared: Rc<MqttShared>,
+    topic_filters: Vec<(ByteString, mqtt::QoS)>,
+    inner: Cell<MqttSinkInner>,
+    sink: Sink<mqtt::Packet>,
+}
+
+impl SubscribeBuilder {
+    /// Set packet id.
+    ///
+    /// panics if id is 0
+    pub fn packet_id(mut self, id: u16) -> Self { // Maybe dont panic here
+        if id == 0 {
+            panic!("id 0 is not allowed");
+        }
+        self.id = id;
+        self
+    }
+
+    /// Add topic filter
+    pub fn topic_filter(mut self, filter: ByteString, qos: mqtt::QoS) -> Self {
+        self.topic_filters.push((filter, qos));
+        self
+    }
+
+    #[allow(clippy::await_holding_refcell_ref)]
+    /// Send subscribe packet
+    pub async fn send(mut self) -> Result<(), SendPacketError> {
+        let inner = self.inner.get_mut();
+        let filters = self.topic_filters;
+
+        // ack channel
+        let (tx, rx) = oneshot::channel();
+
+        // allocate packet id
+        let idx = if self.id == 0 { inner.next_id() } else { self.id };
+        let contains_duplicate_id = inner.queue.iter()
+            .map(|(index, tx)| index)
+            .any(|s| *s == idx);
+        if contains_duplicate_id {
+            return Err(SendPacketError::PacketIdInUse(idx));
+        }
+
+
+        // send subscribe to client
+        inner.queue.push_back((idx, tx));
+        log::trace!("Sending subscribe packet id: {} filters:{:?}", idx, filters);
+
+        if let Some(id) = NonZeroU16::new(idx) {
+            self.sink.send(
+                mqtt::Packet::Subscribe {
+                    packet_id: u16::from(id),
+                    topic_filters: filters,
+                }
+            );
+            rx.await
+                .map_err(|e| SendPacketError::Disconnected)
+                .map(|_| log::trace!("Subscription of filters {:?} acknowledged", self.topic_filters));
+
+            Ok(())
+        } else {
+            Err(SendPacketError::PacketId)
+        }
     }
 }
