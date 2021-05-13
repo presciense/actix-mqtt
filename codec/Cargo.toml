@@ -13,6 +13,8 @@ workspace = ".."
 
 [dependencies]
 bitflags = "1.0"
-bytes = "0.5.2"
-bytestring = "0.1.0"
-actix-codec = "0.2.0"
+bytes = "^0.5"
+actix-codec = "^0.2.0"
+
+[dependencies.bytestring]
+version = ">=0.1.5, <2"
