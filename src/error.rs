@@ -42,6 +42,8 @@ pub enum SendPacketError {
     /// Peer disconnected
     #[display(fmt = "Peer disconnected")]
     Disconnected,
+    #[display(fmt = "Packet id")]
+    PacketId,
 }
 
 #[derive(Copy, Clone, Debug, Display, PartialEq, Eq, Hash)]
