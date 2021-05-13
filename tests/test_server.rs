@@ -52,3 +52,4 @@ async fn test_simple() -> std::io::Result<()> {
 
     Ok(())
 }
+//TODO should write a test for subscribe

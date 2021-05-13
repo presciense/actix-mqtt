@@ -19,6 +19,7 @@ use crate::error::MqttError;
 use crate::publish::Publish;
 use crate::sink::MqttSink;
 use crate::subs::{Subscribe, SubscribeResult, Unsubscribe};
+use std::borrow::BorrowMut;
 
 /// Mqtt client
 #[derive(Clone)]
@@ -310,6 +311,12 @@ impl<Io> ConnectAck<Io> {
     /// Mqtt client sink object
     pub fn sink(&self) -> &MqttSink {
         &self.sink
+    }
+
+    #[inline]
+    /// Mqtt client sink object
+    pub fn sink_mut(&mut self) -> &mut MqttSink {
+        self.sink.borrow_mut()
     }
 
     #[inline]
