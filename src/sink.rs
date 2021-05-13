@@ -192,9 +192,7 @@ impl SubscribeBuilder {
             );
             rx.await
                 .map_err(|e| SendPacketError::Disconnected)
-                .map(|_| log::trace!("Subscription of filters {:?} acknowledged", self.topic_filters));
-
-            Ok(())
+                .map(|_| log::trace!("Subscription of filters {:?} acknowledged", self.topic_filters))
         } else {
             Err(SendPacketError::PacketId)
         }

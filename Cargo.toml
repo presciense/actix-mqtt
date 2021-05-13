@@ -22,7 +22,7 @@ mqtt-codec = "0.3.0"
 actix-codec = "^0.2.0"
 actix-service = "^1.0"
 actix-utils = "^1.0"
-actix-router = "=0.2.4"
+actix-router = "=0.2.4" # TODO fix this pinning
 actix-ioframe = "^0.4"
 actix-rt = "^1.1"
 derive_more = "^0.99"
