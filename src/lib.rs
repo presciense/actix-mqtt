@@ -12,7 +12,6 @@ mod router;
 mod server;
 mod sink;
 mod subs;
-pub use codec;
 
 pub use self::client::Client;
 pub use self::connect::{Connect, ConnectAck};
@@ -22,3 +21,5 @@ pub use self::router::Router;
 pub use self::server::MqttServer;
 pub use self::sink::MqttSink;
 pub use self::subs::{Subscribe, SubscribeIter, SubscribeResult, Subscription, Unsubscribe};
+
+pub use mqtt_codec as codec;

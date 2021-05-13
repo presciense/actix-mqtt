@@ -18,7 +18,9 @@ members = [
 ]
 
 [dependencies]
-mqtt-codec = "0.3.0"
+#mqtt-codec = "0.3.0"
+#mqtt-codec = "0.3.0"
+mqtt-codec = { path = "codec" }
 actix-codec = "^0.2.0"
 actix-service = "^1.0"
 actix-utils = "^1.0"
