@@ -135,7 +135,7 @@ where
     })
 }
 
-/// PUBLIS/SUBSCRIBER/UNSUBSCRIBER packets dispatcher
+/// PUBLISH/SUBSCRIBER/UNSUBSCRIBER packets dispatcher
 pub(crate) struct Dispatcher<St, T: Service> {
     publish: T,
     subscribe: boxed::BoxService<Subscribe<St>, SubscribeResult, T::Error>,

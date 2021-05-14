@@ -20,6 +20,7 @@ use crate::publish::Publish;
 use crate::sink::MqttSink;
 use crate::subs::{Subscribe, SubscribeResult, Unsubscribe};
 use std::borrow::BorrowMut;
+use std::cell::RefCell;
 
 /// Mqtt client
 #[derive(Clone)]
@@ -177,6 +178,22 @@ where
         self.disconnect = Some(Cell::new(boxed::service(
             srv.into_service().map_err(MqttError::Service),
         )));
+        self
+    }
+
+    /// Service to execute on disconnect
+    pub fn subscribe<F, T>(mut self, service: F) -> Self
+    where
+        F: IntoServiceFactory<T>,
+        T: BoxServiceFactory<
+                St,
+                Subscribe<St>,
+                SubscribeResult,
+                MqttError<C::Error>,
+                MqttError<C::Error>,
+            >
+    {
+        self.subscribe = Rc::new(service);
         self
     }
 
