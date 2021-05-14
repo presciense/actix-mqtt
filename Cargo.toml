@@ -18,17 +18,15 @@ members = [
 ]
 
 [dependencies]
-#mqtt-codec = "0.3.0"
-#mqtt-codec = "0.3.0"
 mqtt-codec = { path = "codec" }
 actix-codec = "^0.2.0"
 actix-service = "^1.0"
 actix-utils = "^1.0"
-actix-router = "=0.2.4" # TODO fix this pinning
+actix-router = "^0.2.0" # TODO fix this pinning
 actix-ioframe = "^0.4"
 actix-rt = "^1.1"
 derive_more = "^0.99"
-bytes = "0.5.5"
+bytes = "^0.5"
 either = "1.5.2"
 futures = "0.3.1"
 pin-project = "0.4.6"

@@ -5,7 +5,7 @@ use actix_ioframe::Sink;
 use actix_utils::oneshot;
 use bytes::Bytes;
 use bytestring::ByteString;
-use futures::future::{Future, TryFutureExt, ok};
+use futures::future::{Future, TryFutureExt};
 use mqtt_codec as codec;
 
 use crate::cell::Cell;
