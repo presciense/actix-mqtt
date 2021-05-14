@@ -181,22 +181,22 @@ where
         self
     }
 
-    /// Service to execute on disconnect
     pub fn subscribe<F, T>(mut self, service: F) -> Self
     where
         F: IntoServiceFactory<T>,
-        T: BoxServiceFactory<
-                St,
-                Subscribe<St>,
-                SubscribeResult,
-                MqttError<C::Error>,
-                MqttError<C::Error>,
-            >
+        T: ServiceFactory<
+            Config = St,
+            Request = Subscribe<St>,
+            Response = SubscribeResult,
+            Error = MqttError<C::Error>,
+            InitError = MqttError<C::Error>,
+        > + 'static
     {
-        self.subscribe = Rc::new(service);
+        self.subscribe = Rc::new(boxed::factory(service.into_factory()));
         self
     }
 
+    /// Service to execute on disconnect
     pub fn finish<F, T>(
         self,
         service: F,
