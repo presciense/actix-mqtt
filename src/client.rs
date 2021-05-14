@@ -20,7 +20,6 @@ use crate::publish::Publish;
 use crate::sink::MqttSink;
 use crate::subs::{Subscribe, SubscribeResult, Unsubscribe};
 use std::borrow::BorrowMut;
-use std::cell::RefCell;
 
 /// Mqtt client
 #[derive(Clone)]

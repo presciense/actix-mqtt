@@ -87,7 +87,7 @@ impl Decoder for Codec {
                             if self.max_size != 0 && self.max_size < remaining_length {
                                 return Err(ParseError::MaxSizeExceeded);
                             }
-                            src.split_to(consumed + 1);
+                            let _ = src.split_to(consumed + 1);
                             self.state = DecodeState::Frame(FixedHeader {
                                 packet_type: fixed >> 4,
                                 packet_flags: fixed & 0xF,

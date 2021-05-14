@@ -11,7 +11,6 @@ use mqtt_codec as codec;
 use crate::cell::Cell;
 use std::num::NonZeroU16;
 use crate::error::SendPacketError;
-use futures::FutureExt;
 
 #[derive(Clone)]
 pub struct MqttSink {
@@ -167,12 +166,12 @@ impl SubscribeBuilder {
         let filters = self.topic_filters;
 
         // ack channel
-        let (tx, rx) = oneshot::channel();
+        let (tx, _) = oneshot::channel();
 
         // allocate packet id
         let idx = if self.id == 0 { inner.next_id() } else { self.id };
         let contains_duplicate_id = inner.queue.iter()
-            .map(|(index, tx)| index)
+            .map(|(index, _)| index)
             .any(|s| *s == idx);
         if contains_duplicate_id {
             return Err(SendPacketError::PacketIdInUse(idx));
@@ -190,7 +189,6 @@ impl SubscribeBuilder {
                     topic_filters: filters,
                 }
             );
-            rx.and_then(|r| ok(log::trace!("Subscription acknowledged")));
 
             Ok(())
         } else {
