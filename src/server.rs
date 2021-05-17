@@ -45,15 +45,15 @@ pub struct MqttServer<Io, St, C: ServiceFactory, U> {
 fn default_disconnect<St>(_: St, _: bool) {}
 
 impl<Io, St, C> MqttServer<Io, St, C, ()>
-where
-    St: 'static,
-    C: ServiceFactory<Config = (), Request = Connect<Io>, Response = ConnectAck<Io, St>>
+    where
+        St: 'static,
+        C: ServiceFactory<Config=(), Request=Connect<Io>, Response=ConnectAck<Io, St>>
         + 'static,
 {
     /// Create server factory and provide connect service
     pub fn new<F>(connect: F) -> MqttServer<Io, St, C, impl Fn(St, bool)>
-    where
-        F: IntoServiceFactory<C>,
+        where
+            F: IntoServiceFactory<C>,
     {
         MqttServer {
             connect: connect.into_factory(),
@@ -77,10 +77,10 @@ where
 }
 
 impl<Io, St, C, U> MqttServer<Io, St, C, U>
-where
-    St: Clone + 'static,
-    U: Fn(St, bool) + 'static,
-    C: ServiceFactory<Config = (), Request = Connect<Io>, Response = ConnectAck<Io, St>>
+    where
+        St: Clone + 'static,
+        U: Fn(St, bool) + 'static,
+        C: ServiceFactory<Config=(), Request=Connect<Io>, Response=ConnectAck<Io, St>>
         + 'static,
 {
     /// Set max inbound frame size.
@@ -110,11 +110,11 @@ where
 
     /// Service to execute for subscribe packet
     pub fn subscribe<F, Srv>(mut self, subscribe: F) -> Self
-    where
-        F: IntoServiceFactory<Srv>,
-        Srv: ServiceFactory<Config = St, Request = Subscribe<St>, Response = SubscribeResult>
+        where
+            F: IntoServiceFactory<Srv>,
+            Srv: ServiceFactory<Config=St, Request=Subscribe<St>, Response=SubscribeResult>
             + 'static,
-        C::Error: From<Srv::Error> + From<Srv::InitError>,
+            C::Error: From<Srv::Error> + From<Srv::InitError>,
     {
         self.subscribe = boxed::factory(
             subscribe
@@ -127,10 +127,10 @@ where
 
     /// Service to execute for unsubscribe packet
     pub fn unsubscribe<F, Srv>(mut self, unsubscribe: F) -> Self
-    where
-        F: IntoServiceFactory<Srv>,
-        Srv: ServiceFactory<Config = St, Request = Unsubscribe<St>, Response = ()> + 'static,
-        C::Error: From<Srv::Error> + From<Srv::InitError>,
+        where
+            F: IntoServiceFactory<Srv>,
+            Srv: ServiceFactory<Config=St, Request=Unsubscribe<St>, Response=()> + 'static,
+            C::Error: From<Srv::Error> + From<Srv::InitError>,
     {
         self.unsubscribe = boxed::factory(
             unsubscribe
@@ -145,9 +145,9 @@ where
     ///
     /// Second parameter indicates error occured during disconnect.
     pub fn disconnect<F, Out>(self, disconnect: F) -> MqttServer<Io, St, C, impl Fn(St, bool)>
-    where
-        F: Fn(St, bool) -> Out,
-        Out: Future + 'static,
+        where
+            F: Fn(St, bool) -> Out,
+            Out: Future + 'static,
     {
         MqttServer {
             connect: self.connect,
@@ -168,12 +168,12 @@ where
     pub fn finish<F, P>(
         self,
         publish: F,
-    ) -> impl ServiceFactory<Config = (), Request = Io, Response = (), Error = MqttError<C::Error>>
-    where
-        Io: AsyncRead + AsyncWrite + 'static,
-        F: IntoServiceFactory<P>,
-        P: ServiceFactory<Config = St, Request = Publish<St>, Response = ()> + 'static,
-        C::Error: From<P::Error> + From<P::InitError>,
+    ) -> impl ServiceFactory<Config=(), Request=Io, Response=(), Error=MqttError<C::Error>>
+        where
+            Io: AsyncRead + AsyncWrite + 'static,
+            F: IntoServiceFactory<P>,
+            P: ServiceFactory<Config=St, Request=Publish<St>, Response=()> + 'static,
+            C::Error: From<P::Error> + From<P::InitError>,
     {
         let connect = self.connect;
         let max_size = self.max_size;
@@ -196,7 +196,7 @@ where
                     self.keep_alive,
                     self.inflight,
                     None,
-                    None
+                    None,
                 ))
                 .map_err(|e| match e {
                     ioframe::ServiceError::Service(e) => e,
@@ -211,14 +211,14 @@ fn connect_service_factory<Io, St, C>(
     factory: C,
     max_size: usize,
 ) -> impl ServiceFactory<
-    Config = (),
-    Request = ioframe::Connect<Io, mqtt::Codec>,
-    Response = ioframe::ConnectResult<Io, MqttState<St>, mqtt::Codec>,
-    Error = MqttError<C::Error>,
+    Config=(),
+    Request=ioframe::Connect<Io, mqtt::Codec>,
+    Response=ioframe::ConnectResult<Io, MqttState<St>, mqtt::Codec>,
+    Error=MqttError<C::Error>,
 >
-where
-    Io: AsyncRead + AsyncWrite,
-    C: ServiceFactory<Config = (), Request = Connect<Io>, Response = ConnectAck<Io, St>>,
+    where
+        Io: AsyncRead + AsyncWrite,
+        C: ServiceFactory<Config=(), Request=Connect<Io>, Response=ConnectAck<Io, St>>,
 {
     fn_factory(move || {
         let fut = factory.new_service(());
@@ -251,23 +251,23 @@ where
 
                                 match result.into_inner() {
                                     either::Either::Left((
-                                        mut framed,
-                                        session,
-                                        session_present,
-                                    )) => {
+                                                             mut framed,
+                                                             session,
+                                                             session_present,
+                                                         )) => {
                                         log::trace!(
                                             "Sending: {:#?}",
                                             mqtt::Packet::ConnectAck {
                                                 session_present,
                                                 return_code:
-                                                    mqtt::ConnectCode::ConnectionAccepted,
+                                                mqtt::ConnectCode::ConnectionAccepted,
                                             }
                                         );
                                         framed
                                             .send(mqtt::Packet::ConnectAck {
                                                 session_present,
                                                 return_code:
-                                                    mqtt::ConnectCode::ConnectionAccepted,
+                                                mqtt::ConnectCode::ConnectionAccepted,
                                             })
                                             .await?;
 
