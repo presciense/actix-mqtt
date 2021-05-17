@@ -206,7 +206,7 @@ impl<Io, St, C> ServiceBuilder<Io, St, C>
         self
     }
 
-    pub fn ack<F>(mut self, acknowledgment: Acknowledgment) -> Self {
+    pub fn ack(mut self, acknowledgment: Acknowledgment) -> Self {
         match acknowledgment {
             Acknowledgment::Subscribe(f) => self.subscribe_ack = Some(f),
             Acknowledgment::Unsubscribe(f) => self.unsubscribe_ack = Some(f)
