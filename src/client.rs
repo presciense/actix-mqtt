@@ -184,12 +184,12 @@ where
     where
         F: IntoServiceFactory<T>,
         T: ServiceFactory<
-            Config = St,
-            Request = Subscribe<St>,
-            Response = SubscribeResult,
-            Error = MqttError<C::Error>,
-            InitError = MqttError<C::Error>,
-        > + 'static
+                Config = St,
+                Request = Subscribe<St>,
+                Response = SubscribeResult,
+                Error = MqttError<C::Error>,
+                InitError = MqttError<C::Error>,
+            > + 'static,
     {
         self.subscribe = Rc::new(boxed::factory(service.into_factory()));
         self
@@ -299,7 +299,7 @@ where
                 p => Err(MqttError::Unexpected(p, "Expected CONNECT-ACK packet")),
             }
         }
-            .boxed_local()
+        .boxed_local()
     }
 }
 

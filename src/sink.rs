@@ -9,8 +9,8 @@ use futures::future::{Future, TryFutureExt};
 use mqtt_codec as codec;
 
 use crate::cell::Cell;
-use std::num::NonZeroU16;
 use crate::error::SendPacketError;
+use std::num::NonZeroU16;
 
 #[derive(Clone)]
 pub struct MqttSink {
@@ -64,13 +64,25 @@ impl MqttSink {
         }
     }
 
+    pub fn complete_subscribe(
+        &mut self,
+        topic_filters: Vec<(ByteString, codec::QoS)>,
+    ) -> SubscribeBuilder {
+        SubscribeBuilder {
+            id: 0,
+            topic_filters,
+            inner: self.inner.clone(),
+            sink: self.sink.clone(),
+        }
+    }
+
     /// Send publish packet
     pub fn publish_qos1(
         &mut self,
         topic: ByteString,
         payload: Bytes,
         dup: bool,
-    ) -> impl Future<Output=Result<(), ()>> {
+    ) -> impl Future<Output = Result<(), ()>> {
         let (tx, rx) = oneshot::channel();
 
         let inner = self.inner.get_mut();
@@ -146,7 +158,8 @@ impl SubscribeBuilder {
     /// Set packet id.
     ///
     /// panics if id is 0
-    pub fn packet_id(mut self, id: u16) -> Self { // Maybe dont panic here
+    pub fn packet_id(mut self, id: u16) -> Self {
+        // Maybe dont panic here
         if id == 0 {
             panic!("id 0 is not allowed");
         }
@@ -169,26 +182,29 @@ impl SubscribeBuilder {
         let (tx, _) = oneshot::channel();
 
         // allocate packet id
-        let idx = if self.id == 0 { inner.next_id() } else { self.id };
-        let contains_duplicate_id = inner.queue.iter()
+        let idx = if self.id == 0 {
+            inner.next_id()
+        } else {
+            self.id
+        };
+        let contains_duplicate_id = inner
+            .queue
+            .iter()
             .map(|(index, _)| index)
             .any(|s| *s == idx);
         if contains_duplicate_id {
             return Err(SendPacketError::PacketIdInUse(idx));
         }
 
-
         // send subscribe to client
         inner.queue.push_back((idx, tx));
         log::trace!("Sending subscribe packet id: {} filters:{:?}", idx, filters);
 
         if let Some(id) = NonZeroU16::new(idx) {
-            self.sink.send(
-                codec::Packet::Subscribe {
-                    packet_id: u16::from(id),
-                    topic_filters: filters,
-                }
-            );
+            self.sink.send(codec::Packet::Subscribe {
+                packet_id: u16::from(id),
+                topic_filters: filters,
+            });
 
             Ok(())
         } else {

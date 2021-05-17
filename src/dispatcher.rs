@@ -16,6 +16,7 @@ use futures::ready;
 use mqtt_codec as mqtt;
 
 use crate::cell::Cell;
+use crate::codec::SubscribeReturnCode;
 use crate::error::MqttError;
 use crate::publish::Publish;
 use crate::sink::MqttSink;
@@ -140,6 +141,8 @@ pub(crate) struct Dispatcher<St, T: Service> {
     publish: T,
     subscribe: boxed::BoxService<Subscribe<St>, SubscribeResult, T::Error>,
     unsubscribe: boxed::BoxService<Unsubscribe<St>, (), T::Error>,
+    subscribe_ack: Option<Box<dyn Fn(u16, Vec<SubscribeReturnCode>) -> Result<(), T::Error>>>,
+    unsubscribe_ack: Option<Box<dyn Fn(u16) -> Result<(), T::Error>>>,
 }
 
 impl<St, T> Dispatcher<St, T>
@@ -150,11 +153,17 @@ where
         publish: T,
         subscribe: boxed::BoxService<Subscribe<St>, SubscribeResult, T::Error>,
         unsubscribe: boxed::BoxService<Unsubscribe<St>, (), T::Error>,
+        subscribe_ack: Option<
+            Box<dyn Fn(u16, Vec<SubscribeReturnCode>) -> Result<(), T::Error>>,
+        >,
+        unsubscribe_ack: Option<Box<dyn Fn(u16) -> Result<(), T::Error>>>,
     ) -> Self {
         Self {
             publish,
             subscribe,
             unsubscribe,
+            subscribe_ack,
+            unsubscribe_ack,
         }
     }
 }
@@ -227,6 +236,16 @@ where
                     .map(move |_| Ok(Some(mqtt::Packet::UnsubscribeAck { packet_id })))
                     .boxed_local(),
             )),
+            mqtt::Packet::SubscribeAck { packet_id, status } => {
+                match self.subscribe_ack.clone() {
+                    Some(f) => Either::Left(Either::Right(f(packet_id, status))),
+                    None => Either::Left(Either::Left(ok(None))),
+                }
+            }
+            mqtt::Packet::UnsubscribeAck { packet_id } => match self.unsubscribe_ack.clone() {
+                Some(f) => Either::Left(Either::Right(f(packet_id))),
+                None => Either::Left(Either::Left(ok(None))),
+            },
             _ => Either::Left(Either::Left(ok(None))),
         }
     }

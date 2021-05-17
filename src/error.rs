@@ -1,5 +1,5 @@
+use derive_more::Display;
 use std::io;
-use derive_more::{Display};
 
 /// Errors which can occur when attempting to handle mqtt connection.
 #[derive(Debug)]
