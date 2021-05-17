@@ -76,22 +76,26 @@ pub(crate) fn dispatcher<St, T, E>(
     >,
     keep_alive: u64,
     inflight: usize,
+    subscribe_ack: Option<
+        Box<fn(u16, Vec<SubscribeReturnCode>) -> bool>,
+    >,
+    unsubscribe_ack: Option<Box<fn(u16) -> bool>>,
 ) -> impl ServiceFactory<
-    Config = MqttState<St>,
-    Request = ioframe::Item<MqttState<St>, mqtt::Codec>,
-    Response = Option<mqtt::Packet>,
-    Error = MqttError<E>,
-    InitError = MqttError<E>,
+    Config=MqttState<St>,
+    Request=ioframe::Item<MqttState<St>, mqtt::Codec>,
+    Response=Option<mqtt::Packet>,
+    Error=MqttError<E>,
+    InitError=MqttError<E>,
 >
-where
-    E: 'static,
-    St: Clone + 'static,
-    T: ServiceFactory<
-            Config = St,
-            Request = Publish<St>,
-            Response = (),
-            Error = MqttError<E>,
-            InitError = MqttError<E>,
+    where
+        E: 'static,
+        St: Clone + 'static,
+        T: ServiceFactory<
+            Config=St,
+            Request=Publish<St>,
+            Response=(),
+            Error=MqttError<E>,
+            InitError=MqttError<E>,
         > + 'static,
 {
     let time = LowResTimeService::with(Duration::from_secs(1));
@@ -107,6 +111,8 @@ where
             unsubscribe.new_service(state.clone()),
         );
 
+        let sub_f = subscribe_ack.clone();
+        let unsub_f = unsubscribe_ack.clone();
         async move {
             let (publish, subscribe, unsubscribe) = fut.await;
 
@@ -118,19 +124,21 @@ where
                     time,
                     || MqttError::KeepAliveTimeout,
                 ))
-                .and_then(
-                    // limit number of in-flight messages
-                    InFlightService::new(
-                        inflight,
-                        // mqtt spec requires ack ordering, so enforce response ordering
-                        InOrder::service(publish?).map_err(|e| match e {
-                            InOrderError::Service(e) => e,
-                            InOrderError::Disconnected => MqttError::Disconnected,
-                        }),
+                    .and_then(
+                        // limit number of in-flight messages
+                        InFlightService::new(
+                            inflight,
+                            // mqtt spec requires ack ordering, so enforce response ordering
+                            InOrder::service(publish?).map_err(|e| match e {
+                                InOrderError::Service(e) => e,
+                                InOrderError::Disconnected => MqttError::Disconnected,
+                            }),
+                        ),
                     ),
-                ),
                 subscribe?,
                 unsubscribe?,
+                sub_f,
+                unsub_f,
             ))
         }
     })
@@ -141,22 +149,22 @@ pub(crate) struct Dispatcher<St, T: Service> {
     publish: T,
     subscribe: boxed::BoxService<Subscribe<St>, SubscribeResult, T::Error>,
     unsubscribe: boxed::BoxService<Unsubscribe<St>, (), T::Error>,
-    subscribe_ack: Option<Box<dyn Fn(u16, Vec<SubscribeReturnCode>) -> Result<(), T::Error>>>,
-    unsubscribe_ack: Option<Box<dyn Fn(u16) -> Result<(), T::Error>>>,
+    subscribe_ack: Option<Box<fn(u16, Vec<SubscribeReturnCode>) -> bool>>,
+    unsubscribe_ack: Option<Box<fn(u16) -> bool>>,
 }
 
 impl<St, T> Dispatcher<St, T>
-where
-    T: Service<Request = Publish<St>, Response = ()>,
+    where
+        T: Service<Request=Publish<St>, Response=()>,
 {
     pub(crate) fn new(
         publish: T,
         subscribe: boxed::BoxService<Subscribe<St>, SubscribeResult, T::Error>,
         unsubscribe: boxed::BoxService<Unsubscribe<St>, (), T::Error>,
         subscribe_ack: Option<
-            Box<dyn Fn(u16, Vec<SubscribeReturnCode>) -> Result<(), T::Error>>,
+            Box<fn(u16, Vec<SubscribeReturnCode>) -> bool>,
         >,
-        unsubscribe_ack: Option<Box<dyn Fn(u16) -> Result<(), T::Error>>>,
+        unsubscribe_ack: Option<Box<fn(u16) -> bool>>,
     ) -> Self {
         Self {
             publish,
@@ -169,9 +177,9 @@ where
 }
 
 impl<St, T> Service for Dispatcher<St, T>
-where
-    T: Service<Request = Publish<St>, Response = ()>,
-    T::Error: 'static,
+    where
+        T: Service<Request=Publish<St>, Response=()>,
+        T::Error: 'static,
 {
     type Request = ioframe::Item<MqttState<St>, mqtt::Codec>;
     type Response = Option<mqtt::Packet>;
@@ -225,7 +233,7 @@ where
                     packet_id,
                     fut: self.subscribe.call(Subscribe::new(state, topic_filters)),
                 }
-                .boxed_local(),
+                    .boxed_local(),
             )),
             mqtt::Packet::Unsubscribe {
                 packet_id,
@@ -237,15 +245,17 @@ where
                     .boxed_local(),
             )),
             mqtt::Packet::SubscribeAck { packet_id, status } => {
-                match self.subscribe_ack.clone() {
-                    Some(f) => Either::Left(Either::Right(f(packet_id, status))),
-                    None => Either::Left(Either::Left(ok(None))),
+                if let Some(ref f) = self.subscribe_ack {
+                    f(packet_id, status);
                 }
+                Either::Left(Either::Left(ok(None)))
             }
-            mqtt::Packet::UnsubscribeAck { packet_id } => match self.unsubscribe_ack.clone() {
-                Some(f) => Either::Left(Either::Right(f(packet_id))),
-                None => Either::Left(Either::Left(ok(None))),
-            },
+            mqtt::Packet::UnsubscribeAck { packet_id } => {
+                if let Some(ref f) = self.unsubscribe_ack {
+                    f(packet_id);
+                }
+                Either::Left(Either::Left(ok(None)))
+            }
             _ => Either::Left(Either::Left(ok(None))),
         }
     }
@@ -261,8 +271,8 @@ pub(crate) struct PublishResponse<T, E> {
 }
 
 impl<T, E> Future for PublishResponse<T, E>
-where
-    T: Future<Output = Result<(), E>>,
+    where
+        T: Future<Output=Result<(), E>>,
 {
     type Output = Result<Option<mqtt::Packet>, E>;
 
