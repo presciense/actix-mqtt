@@ -64,15 +64,22 @@ impl MqttSink {
         }
     }
 
-    pub fn complete_subscribe(
-        &mut self,
-        topic_filters: Vec<(ByteString, codec::QoS)>,
-    ) -> SubscribeBuilder {
-        SubscribeBuilder {
-            id: 0,
-            topic_filters,
-            inner: self.inner.clone(),
-            sink: self.sink.clone(),
+    pub(crate) fn complete_subscribe(&mut self, packet_id: u16) {
+        if let Some((idx, tx)) = self.inner.get_mut().queue.pop_front() {
+            if idx != packet_id {
+                log::trace!(
+                    "MQTT protocol error, packet_id order does not match, expected {}, got: {}",
+                    idx,
+                    packet_id
+                );
+                self.close();
+            } else {
+                log::trace!("Ack subscribe packet with id: {}", packet_id);
+                let _ = tx.send(());
+            }
+        } else {
+            log::trace!("Unexpected SubscribeAck packet");
+            self.close();
         }
     }
 

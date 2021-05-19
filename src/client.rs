@@ -13,14 +13,13 @@ use futures::{Sink, SinkExt, Stream, StreamExt};
 use mqtt_codec as mqtt;
 
 use crate::cell::Cell;
-use crate::default::{SubsNotImplemented, UnsubsNotImplemented};
+use crate::default::{SubAcksNotImplemented, SubsNotImplemented, UnsubsNotImplemented};
 use crate::dispatcher::{dispatcher, MqttState};
 use crate::error::MqttError;
 use crate::publish::Publish;
 use crate::sink::MqttSink;
 use crate::subs::{Subscribe, SubscribeResult, Unsubscribe};
 use std::borrow::BorrowMut;
-use crate::codec::SubscribeReturnCode;
 
 /// Mqtt client
 #[derive(Clone)]
@@ -37,8 +36,8 @@ pub struct Client<Io, St> {
 }
 
 impl<Io, St> Client<Io, St>
-    where
-        St: 'static,
+where
+    St: 'static,
 {
     /// Create new client and provide client id
     pub fn new(client_id: ByteString) -> Self {
@@ -107,11 +106,11 @@ impl<Io, St> Client<Io, St>
     ///
     /// State service verifies connect ack packet and construct connection state.
     pub fn state<C, F>(self, state: F) -> ServiceBuilder<Io, St, C>
-        where
-            F: IntoService<C>,
-            Io: AsyncRead + AsyncWrite,
-            C: Service<Request=ConnectAck<Io>, Response=ConnectAckResult<Io, St>>,
-            C::Error: 'static,
+    where
+        F: IntoService<C>,
+        Io: AsyncRead + AsyncWrite,
+        C: Service<Request = ConnectAck<Io>, Response = ConnectAckResult<Io, St>>,
+        C::Error: 'static,
     {
         ServiceBuilder {
             state: Cell::new(state.into_service()),
@@ -129,8 +128,7 @@ impl<Io, St> Client<Io, St>
             disconnect: None,
             keep_alive: self.keep_alive.into(),
             inflight: self.inflight,
-            subscribe_ack: None,
-            unsubscribe_ack: None,
+            subscribe_ack: Rc::new(boxed::factory(SubAcksNotImplemented::default())),
             _t: PhantomData,
         }
     }
@@ -160,30 +158,30 @@ pub struct ServiceBuilder<Io, St, C: Service> {
     disconnect: Option<Cell<boxed::BoxService<St, (), MqttError<C::Error>>>>,
     keep_alive: u64,
     inflight: usize,
-    subscribe_ack: Option<
-        Box<fn(u16, Vec<SubscribeReturnCode>) -> bool>>,
-    unsubscribe_ack: Option<Box<fn(u16) -> bool>>,
+    subscribe_ack: Rc<
+        boxed::BoxServiceFactory<
+            St,
+            SubscribeResult,
+            (),
+            MqttError<C::Error>,
+            MqttError<C::Error>,
+        >,
+    >,
     _t: PhantomData<(Io, St, C)>,
 }
 
-#[derive(Clone)]
-pub enum Acknowledgment {
-    Subscribe(Box<fn(u16, Vec<SubscribeReturnCode>) -> bool>),
-    Unsubscribe(Box<fn(u16) -> bool>),
-}
-
 impl<Io, St, C> ServiceBuilder<Io, St, C>
-    where
-        St: Clone + 'static,
-        Io: AsyncRead + AsyncWrite + 'static,
-        C: Service<Request=ConnectAck<Io>, Response=ConnectAckResult<Io, St>> + 'static,
-        C::Error: 'static,
+where
+    St: Clone + 'static,
+    Io: AsyncRead + AsyncWrite + 'static,
+    C: Service<Request = ConnectAck<Io>, Response = ConnectAckResult<Io, St>> + 'static,
+    C::Error: 'static,
 {
     /// Service to execute on disconnect
     pub fn disconnect<UF, U>(mut self, srv: UF) -> Self
-        where
-            UF: IntoService<U>,
-            U: Service<Request=St, Response=(), Error=C::Error> + 'static,
+    where
+        UF: IntoService<U>,
+        U: Service<Request = St, Response = (), Error = C::Error> + 'static,
     {
         self.disconnect = Some(Cell::new(boxed::service(
             srv.into_service().map_err(MqttError::Service),
@@ -191,26 +189,35 @@ impl<Io, St, C> ServiceBuilder<Io, St, C>
         self
     }
 
-    pub fn subscribe<F, T>(mut self, service: F) -> Self
-        where
-            F: IntoServiceFactory<T>,
-            T: ServiceFactory<
-                Config=St,
-                Request=Subscribe<St>,
-                Response=SubscribeResult,
-                Error=MqttError<C::Error>,
-                InitError=MqttError<C::Error>,
+    // As per the spec, a client should not accept incoming sub packets
+    // pub fn subscribe<F, T>(mut self, service: F) -> Self
+    //     where
+    //         F: IntoServiceFactory<T>,
+    //         T: ServiceFactory<
+    //             Config=St,
+    //             Request=Subscribe<St>,
+    //             Response=SubscribeResult,
+    //             Error=MqttError<C::Error>,
+    //             InitError=MqttError<C::Error>,
+    //         > + 'static,
+    // {
+    //     self.subscribe = Rc::new(boxed::factory(service.into_factory()));
+    //     self
+    // }
+
+    /// Service to execute on subscription acknowledgement
+    pub fn subscribe_ack<F, T>(mut self, service: F) -> Self
+    where
+        F: IntoServiceFactory<T>,
+        T: ServiceFactory<
+                Config = St,
+                Request = SubscribeResult,
+                Response = (),
+                Error = MqttError<C::Error>,
+                InitError = MqttError<C::Error>,
             > + 'static,
     {
-        self.subscribe = Rc::new(boxed::factory(service.into_factory()));
-        self
-    }
-
-    pub fn ack(mut self, acknowledgment: Acknowledgment) -> Self {
-        match acknowledgment {
-            Acknowledgment::Subscribe(f) => self.subscribe_ack = Some(f),
-            Acknowledgment::Unsubscribe(f) => self.unsubscribe_ack = Some(f)
-        }
+        self.subscribe_ack = Rc::new(boxed::factory(service.into_factory()));
         self
     }
 
@@ -218,15 +225,15 @@ impl<Io, St, C> ServiceBuilder<Io, St, C>
     pub fn finish<F, T>(
         self,
         service: F,
-    ) -> impl Service<Request=Io, Response=(), Error=MqttError<C::Error>>
-        where
-            F: IntoServiceFactory<T>,
-            T: ServiceFactory<
-                Config=St,
-                Request=Publish<St>,
-                Response=(),
-                Error=C::Error,
-                InitError=C::Error,
+    ) -> impl Service<Request = Io, Response = (), Error = MqttError<C::Error>>
+    where
+        F: IntoServiceFactory<T>,
+        T: ServiceFactory<
+                Config = St,
+                Request = Publish<St>,
+                Response = (),
+                Error = C::Error,
+                InitError = C::Error,
             > + 'static,
     {
         ioframe::Builder::new()
@@ -245,7 +252,6 @@ impl<Io, St, C> ServiceBuilder<Io, St, C>
                 self.keep_alive,
                 self.inflight,
                 self.subscribe_ack,
-                self.unsubscribe_ack,
             ))
             .map_err(|e| match e {
                 ioframe::ServiceError::Service(e) => e,
@@ -262,11 +268,11 @@ struct ConnectService<Io, St, C> {
 }
 
 impl<Io, St, C> Service for ConnectService<Io, St, C>
-    where
-        St: 'static,
-        Io: AsyncRead + AsyncWrite + 'static,
-        C: Service<Request=ConnectAck<Io>, Response=ConnectAckResult<Io, St>> + 'static,
-        C::Error: 'static,
+where
+    St: 'static,
+    Io: AsyncRead + AsyncWrite + 'static,
+    C: Service<Request = ConnectAck<Io>, Response = ConnectAckResult<Io, St>> + 'static,
+    C::Error: 'static,
 {
     type Request = ioframe::Connect<Io, mqtt::Codec>;
     type Response = ioframe::ConnectResult<Io, MqttState<St>, mqtt::Codec>;
@@ -320,7 +326,7 @@ impl<Io, St, C> Service for ConnectService<Io, St, C>
                 p => Err(MqttError::Unexpected(p, "Expected CONNECT-ACK packet")),
             }
         }
-            .boxed_local()
+        .boxed_local()
     }
 }
 
@@ -367,8 +373,8 @@ impl<Io> ConnectAck<Io> {
 }
 
 impl<Io> Stream for ConnectAck<Io>
-    where
-        Io: AsyncRead + AsyncWrite + Unpin,
+where
+    Io: AsyncRead + AsyncWrite + Unpin,
 {
     type Item = Result<mqtt::Packet, mqtt::ParseError>;
 
@@ -378,8 +384,8 @@ impl<Io> Stream for ConnectAck<Io>
 }
 
 impl<Io> Sink<mqtt::Packet> for ConnectAck<Io>
-    where
-        Io: AsyncRead + AsyncWrite + Unpin,
+where
+    Io: AsyncRead + AsyncWrite + Unpin,
 {
     type Error = mqtt::ParseError;
 
@@ -407,8 +413,8 @@ pub struct ConnectAckResult<Io, St> {
 }
 
 impl<Io, St> Stream for ConnectAckResult<Io, St>
-    where
-        Io: AsyncRead + AsyncWrite + Unpin,
+where
+    Io: AsyncRead + AsyncWrite + Unpin,
 {
     type Item = Result<mqtt::Packet, mqtt::ParseError>;
 
@@ -418,8 +424,8 @@ impl<Io, St> Stream for ConnectAckResult<Io, St>
 }
 
 impl<Io, St> Sink<mqtt::Packet> for ConnectAckResult<Io, St>
-    where
-        Io: AsyncRead + AsyncWrite + Unpin,
+where
+    Io: AsyncRead + AsyncWrite + Unpin,
 {
     type Error = mqtt::ParseError;
 

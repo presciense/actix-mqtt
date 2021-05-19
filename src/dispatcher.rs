@@ -11,12 +11,11 @@ use actix_utils::inflight::InFlightService;
 use actix_utils::keepalive::KeepAliveService;
 use actix_utils::order::{InOrder, InOrderError};
 use actix_utils::time::LowResTimeService;
-use futures::future::{join3, ok, Either, FutureExt, LocalBoxFuture, Ready};
+use futures::future::{join4, ok, Either, FutureExt, LocalBoxFuture, Ready};
 use futures::ready;
 use mqtt_codec as mqtt;
 
 use crate::cell::Cell;
-use crate::codec::SubscribeReturnCode;
 use crate::error::MqttError;
 use crate::publish::Publish;
 use crate::sink::MqttSink;
@@ -76,26 +75,25 @@ pub(crate) fn dispatcher<St, T, E>(
     >,
     keep_alive: u64,
     inflight: usize,
-    subscribe_ack: Option<
-        Box<fn(u16, Vec<SubscribeReturnCode>) -> bool>,
+    subscribe_ack: Rc<
+        boxed::BoxServiceFactory<St, SubscribeResult, (), MqttError<E>, MqttError<E>>,
     >,
-    unsubscribe_ack: Option<Box<fn(u16) -> bool>>,
 ) -> impl ServiceFactory<
-    Config=MqttState<St>,
-    Request=ioframe::Item<MqttState<St>, mqtt::Codec>,
-    Response=Option<mqtt::Packet>,
-    Error=MqttError<E>,
-    InitError=MqttError<E>,
+    Config = MqttState<St>,
+    Request = ioframe::Item<MqttState<St>, mqtt::Codec>,
+    Response = Option<mqtt::Packet>,
+    Error = MqttError<E>,
+    InitError = MqttError<E>,
 >
-    where
-        E: 'static,
-        St: Clone + 'static,
-        T: ServiceFactory<
-            Config=St,
-            Request=Publish<St>,
-            Response=(),
-            Error=MqttError<E>,
-            InitError=MqttError<E>,
+where
+    E: 'static,
+    St: Clone + 'static,
+    T: ServiceFactory<
+            Config = St,
+            Request = Publish<St>,
+            Response = (),
+            Error = MqttError<E>,
+            InitError = MqttError<E>,
         > + 'static,
 {
     let time = LowResTimeService::with(Duration::from_secs(1));
@@ -105,16 +103,15 @@ pub(crate) fn dispatcher<St, T, E>(
         let state = cfg.session().clone();
 
         // create services
-        let fut = join3(
+        let fut = join4(
             publish.new_service(state.clone()),
             subscribe.new_service(state.clone()),
             unsubscribe.new_service(state.clone()),
+            subscribe_ack.new_service(state.clone()),
         );
 
-        let sub_f = subscribe_ack.clone();
-        let unsub_f = unsubscribe_ack.clone();
         async move {
-            let (publish, subscribe, unsubscribe) = fut.await;
+            let (publish, subscribe, unsubscribe, subscribe_ack) = fut.await;
 
             // mqtt dispatcher
             Ok(Dispatcher::new(
@@ -124,21 +121,20 @@ pub(crate) fn dispatcher<St, T, E>(
                     time,
                     || MqttError::KeepAliveTimeout,
                 ))
-                    .and_then(
-                        // limit number of in-flight messages
-                        InFlightService::new(
-                            inflight,
-                            // mqtt spec requires ack ordering, so enforce response ordering
-                            InOrder::service(publish?).map_err(|e| match e {
-                                InOrderError::Service(e) => e,
-                                InOrderError::Disconnected => MqttError::Disconnected,
-                            }),
-                        ),
+                .and_then(
+                    // limit number of in-flight messages
+                    InFlightService::new(
+                        inflight,
+                        // mqtt spec requires ack ordering, so enforce response ordering
+                        InOrder::service(publish?).map_err(|e| match e {
+                            InOrderError::Service(e) => e,
+                            InOrderError::Disconnected => MqttError::Disconnected,
+                        }),
                     ),
+                ),
                 subscribe?,
                 unsubscribe?,
-                sub_f,
-                unsub_f,
+                subscribe_ack?,
             ))
         }
     })
@@ -149,37 +145,32 @@ pub(crate) struct Dispatcher<St, T: Service> {
     publish: T,
     subscribe: boxed::BoxService<Subscribe<St>, SubscribeResult, T::Error>,
     unsubscribe: boxed::BoxService<Unsubscribe<St>, (), T::Error>,
-    subscribe_ack: Option<Box<fn(u16, Vec<SubscribeReturnCode>) -> bool>>,
-    unsubscribe_ack: Option<Box<fn(u16) -> bool>>,
+    subscribe_ack: boxed::BoxService<SubscribeResult, (), T::Error>,
 }
 
 impl<St, T> Dispatcher<St, T>
-    where
-        T: Service<Request=Publish<St>, Response=()>,
+where
+    T: Service<Request = Publish<St>, Response = ()>,
 {
     pub(crate) fn new(
         publish: T,
         subscribe: boxed::BoxService<Subscribe<St>, SubscribeResult, T::Error>,
         unsubscribe: boxed::BoxService<Unsubscribe<St>, (), T::Error>,
-        subscribe_ack: Option<
-            Box<fn(u16, Vec<SubscribeReturnCode>) -> bool>,
-        >,
-        unsubscribe_ack: Option<Box<fn(u16) -> bool>>,
+        subscribe_ack: boxed::BoxService<SubscribeResult, (), T::Error>,
     ) -> Self {
         Self {
             publish,
             subscribe,
             unsubscribe,
             subscribe_ack,
-            unsubscribe_ack,
         }
     }
 }
 
 impl<St, T> Service for Dispatcher<St, T>
-    where
-        T: Service<Request=Publish<St>, Response=()>,
-        T::Error: 'static,
+where
+    T: Service<Request = Publish<St>, Response = ()>,
+    T::Error: 'static,
 {
     type Request = ioframe::Item<MqttState<St>, mqtt::Codec>;
     type Response = Option<mqtt::Packet>;
@@ -196,8 +187,9 @@ impl<St, T> Service for Dispatcher<St, T>
         let res1 = self.publish.poll_ready(cx)?;
         let res2 = self.subscribe.poll_ready(cx)?;
         let res3 = self.unsubscribe.poll_ready(cx)?;
+        let res4 = self.subscribe_ack.poll_ready(cx)?;
 
-        if res1.is_pending() || res2.is_pending() || res3.is_pending() {
+        if res1.is_pending() || res2.is_pending() || res3.is_pending() || res4.is_pending() {
             Poll::Pending
         } else {
             Poll::Ready(Ok(()))
@@ -233,7 +225,7 @@ impl<St, T> Service for Dispatcher<St, T>
                     packet_id,
                     fut: self.subscribe.call(Subscribe::new(state, topic_filters)),
                 }
-                    .boxed_local(),
+                .boxed_local(),
             )),
             mqtt::Packet::Unsubscribe {
                 packet_id,
@@ -244,18 +236,13 @@ impl<St, T> Service for Dispatcher<St, T>
                     .map(move |_| Ok(Some(mqtt::Packet::UnsubscribeAck { packet_id })))
                     .boxed_local(),
             )),
-            mqtt::Packet::SubscribeAck { packet_id, status } => {
-                if let Some(ref f) = self.subscribe_ack {
-                    f(packet_id, status);
-                }
-                Either::Left(Either::Left(ok(None)))
-            }
-            mqtt::Packet::UnsubscribeAck { packet_id } => {
-                if let Some(ref f) = self.unsubscribe_ack {
-                    f(packet_id);
-                }
-                Either::Left(Either::Left(ok(None)))
-            }
+            mqtt::Packet::SubscribeAck { packet_id, status } => Either::Left(Either::Right({
+                state.inner.get_mut().sink.complete_subscribe(packet_id);
+                self.subscribe_ack
+                    .call(SubscribeResult { codes: status })
+                    .map(move |_| Ok(None))
+                    .boxed_local()
+            })),
             _ => Either::Left(Either::Left(ok(None))),
         }
     }
@@ -271,8 +258,8 @@ pub(crate) struct PublishResponse<T, E> {
 }
 
 impl<T, E> Future for PublishResponse<T, E>
-    where
-        T: Future<Output=Result<(), E>>,
+where
+    T: Future<Output = Result<(), E>>,
 {
     type Output = Result<Option<mqtt::Packet>, E>;
 
