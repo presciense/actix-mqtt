@@ -34,7 +34,6 @@ impl MqttSink {
 
     /// Close mqtt connection
     pub fn close(&self) {
-        //TODO clear queue
         self.sink.close();
     }
 
@@ -132,16 +131,15 @@ impl MqttSink {
     }
 }
 
-//TODO could make this elsewhere as a shared queue
 #[derive(Default)]
 pub(crate) struct MqttSinkInner {
     pub(crate) idx: u16,
-    pub(crate) queue: VecDeque<(u16, oneshot::Sender<()>)>, //TODO could be map
+    pub(crate) queue: VecDeque<(u16, oneshot::Sender<()>)>,
 }
 
 impl MqttSinkInner {
     pub(crate) fn next_id(&mut self) -> u16 {
-        // TODO this is clandestine (multiple threads), refcell?
+        // TODO this is clandestine (multiple threads)
         let idx = self.idx + 1;
         if idx == u16::MAX {
             self.idx = 0;
