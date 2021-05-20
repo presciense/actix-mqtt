@@ -9,7 +9,6 @@ use actix_service::{IntoServiceFactory, Service, ServiceFactory};
 use futures::{FutureExt, SinkExt, StreamExt};
 use mqtt_codec as mqtt;
 
-use crate::cell::Cell;
 use crate::connect::{Connect, ConnectAck};
 use crate::default::{SubsNotImplemented, UnsubsNotImplemented};
 use crate::dispatcher::{dispatcher, MqttState};
@@ -17,6 +16,7 @@ use crate::error::MqttError;
 use crate::publish::Publish;
 use crate::sink::MqttSink;
 use crate::subs::{Subscribe, SubscribeResult, Unsubscribe};
+use crate::{cell::Cell, default::SubAcksNotImplemented};
 
 /// Mqtt Server
 pub struct MqttServer<Io, St, C: ServiceFactory, U> {
@@ -195,6 +195,7 @@ where
                     Rc::new(self.unsubscribe),
                     self.keep_alive,
                     self.inflight,
+                    Rc::new(boxed::factory(SubAcksNotImplemented::default())),
                 ))
                 .map_err(|e| match e {
                     ioframe::ServiceError::Service(e) => e,

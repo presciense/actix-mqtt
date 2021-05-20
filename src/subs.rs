@@ -18,6 +18,12 @@ pub struct SubscribeResult {
     pub(crate) codes: Vec<mqtt::SubscribeReturnCode>,
 }
 
+impl SubscribeResult {
+    pub fn get_codes(&self) -> &Vec<mqtt::SubscribeReturnCode> {
+        &self.codes
+    }
+}
+
 impl<S> Subscribe<S> {
     pub(crate) fn new(state: MqttState<S>, topics: Vec<(ByteString, mqtt::QoS)>) -> Self {
         let mut codes = Vec::with_capacity(topics.len());

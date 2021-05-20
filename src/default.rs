@@ -123,3 +123,42 @@ impl<S, E> Service for UnsubsNotImplemented<S, E> {
         ok(())
     }
 }
+
+/// Not implemented subscribe acknowledge service
+pub struct SubAcksNotImplemented<S, E>(PhantomData<(S, E)>);
+
+impl<S, E> Default for SubAcksNotImplemented<S, E> {
+    fn default() -> Self {
+        SubAcksNotImplemented(PhantomData)
+    }
+}
+
+impl<S, E> ServiceFactory for SubAcksNotImplemented<S, E> {
+    type Config = S;
+    type Request = SubscribeResult;
+    type Response = ();
+    type Error = E;
+    type InitError = E;
+    type Service = SubAcksNotImplemented<S, E>;
+    type Future = Ready<Result<Self::Service, Self::InitError>>;
+
+    fn new_service(&self, _: S) -> Self::Future {
+        ok(SubAcksNotImplemented(PhantomData))
+    }
+}
+
+impl<S, E> Service for SubAcksNotImplemented<S, E> {
+    type Request = SubscribeResult;
+    type Response = ();
+    type Error = E;
+    type Future = Ready<Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, _: &mut Context) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, _: SubscribeResult) -> Self::Future {
+        log::warn!("MQTT Subscribe Acknowledgement is not implemented");
+        ok(())
+    }
+}

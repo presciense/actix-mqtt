@@ -13,12 +13,13 @@ use futures::{Sink, SinkExt, Stream, StreamExt};
 use mqtt_codec as mqtt;
 
 use crate::cell::Cell;
-use crate::default::{SubsNotImplemented, UnsubsNotImplemented};
+use crate::default::{SubAcksNotImplemented, SubsNotImplemented, UnsubsNotImplemented};
 use crate::dispatcher::{dispatcher, MqttState};
 use crate::error::MqttError;
 use crate::publish::Publish;
 use crate::sink::MqttSink;
 use crate::subs::{Subscribe, SubscribeResult, Unsubscribe};
+use std::borrow::BorrowMut;
 
 /// Mqtt client
 #[derive(Clone)]
@@ -127,6 +128,7 @@ where
             disconnect: None,
             keep_alive: self.keep_alive.into(),
             inflight: self.inflight,
+            subscribe_ack: Rc::new(boxed::factory(SubAcksNotImplemented::default())),
             _t: PhantomData,
         }
     }
@@ -156,7 +158,15 @@ pub struct ServiceBuilder<Io, St, C: Service> {
     disconnect: Option<Cell<boxed::BoxService<St, (), MqttError<C::Error>>>>,
     keep_alive: u64,
     inflight: usize,
-
+    subscribe_ack: Rc<
+        boxed::BoxServiceFactory<
+            St,
+            SubscribeResult,
+            (),
+            MqttError<C::Error>,
+            MqttError<C::Error>,
+        >,
+    >,
     _t: PhantomData<(Io, St, C)>,
 }
 
@@ -179,6 +189,39 @@ where
         self
     }
 
+    // As per the spec, a client should not accept incoming sub packets
+    // pub fn subscribe<F, T>(mut self, service: F) -> Self
+    //     where
+    //         F: IntoServiceFactory<T>,
+    //         T: ServiceFactory<
+    //             Config=St,
+    //             Request=Subscribe<St>,
+    //             Response=SubscribeResult,
+    //             Error=MqttError<C::Error>,
+    //             InitError=MqttError<C::Error>,
+    //         > + 'static,
+    // {
+    //     self.subscribe = Rc::new(boxed::factory(service.into_factory()));
+    //     self
+    // }
+
+    /// Service to execute on subscription acknowledgement
+    pub fn subscribe_ack<F, T>(mut self, service: F) -> Self
+    where
+        F: IntoServiceFactory<T>,
+        T: ServiceFactory<
+                Config = St,
+                Request = SubscribeResult,
+                Response = (),
+                Error = MqttError<C::Error>,
+                InitError = MqttError<C::Error>,
+            > + 'static,
+    {
+        self.subscribe_ack = Rc::new(boxed::factory(service.into_factory()));
+        self
+    }
+
+    /// Service to execute on disconnect
     pub fn finish<F, T>(
         self,
         service: F,
@@ -208,6 +251,7 @@ where
                 self.unsubscribe,
                 self.keep_alive,
                 self.inflight,
+                self.subscribe_ack,
             ))
             .map_err(|e| match e {
                 ioframe::ServiceError::Service(e) => e,
@@ -282,7 +326,7 @@ where
                 p => Err(MqttError::Unexpected(p, "Expected CONNECT-ACK packet")),
             }
         }
-            .boxed_local()
+        .boxed_local()
     }
 }
 
@@ -310,6 +354,12 @@ impl<Io> ConnectAck<Io> {
     /// Mqtt client sink object
     pub fn sink(&self) -> &MqttSink {
         &self.sink
+    }
+
+    #[inline]
+    /// Mqtt client sink object
+    pub fn sink_mut(&mut self) -> &mut MqttSink {
+        self.sink.borrow_mut()
     }
 
     #[inline]
