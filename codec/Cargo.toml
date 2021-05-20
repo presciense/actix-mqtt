@@ -1,10 +1,10 @@
 [package]
 name = "mqtt-codec"
 version = "0.3.0"
-authors = ["Max Gortman <mgortman@microsoft.com>", "Nikolay Kim <fafhrd91@gmail.com>", "Flier Lu <flier.lu@gmail.com>"]
+authors = ["Presciense info@presciense.com"]
 description = "MQTT v3.1.1 Codec"
 documentation = "https://docs.rs/mqtt-codec"
-repository = "https://github.com/actix/actix-mqtt.git"
+repository = "https://github.com/presciense/actix-mqtt.git"
 readme = "README.md"
 keywords = ["MQTT", "IoT", "messaging"]
 license = "MIT/Apache-2.0"

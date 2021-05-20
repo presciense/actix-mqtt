@@ -1,10 +1,10 @@
 [package]
 name = "actix-mqtt"
 version = "0.2.4"
-authors = ["Nikolay Kim <fafhrd91@gmail.com>"]
+authors = ["Presciense info@presciense.com"]
 description = "MQTT v3.1.1 Client/Server framework"
 documentation = "https://docs.rs/actix-mqtt"
-repository = "https://github.com/actix/actix-mqtt.git"
+repository = "https://github.com/presciense/actix-mqtt.git"
 categories = ["network-programming"]
 keywords = ["MQTT", "IoT", "messaging"]
 license = "MIT/Apache-2.0"
