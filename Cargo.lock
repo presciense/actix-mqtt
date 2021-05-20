@@ -79,7 +79,7 @@ dependencies = [
 
 [[package]]
 name = "actix-mqtt"
-version = "0.2.1"
+version = "0.2.4"
 dependencies = [
  "actix-codec 0.2.0",
  "actix-connect",
